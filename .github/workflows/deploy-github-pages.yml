@@ -1,0 +1,53 @@
+# Builds roulette-web and deploys dist/apps/roulette-web/browser to GitHub Pages.
+# After merging: Repo Settings → Pages → Source = "GitHub Actions".
+#
+# Project site URL: https://<owner>.github.io/<repo>/
+# If your repo is <user>.github.io (root user site), set BASE_HREF below to / instead.
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Subpath must match the repo name for https://<owner>.github.io/<repo>/
+      - name: Build Angular app
+        run: npx nx build roulette-web --configuration=production --baseHref=/${{ github.event.repository.name }}/
+
+      - name: Disable Jekyll (keeps files like _headers intact if you add them later)
+        run: touch dist/apps/roulette-web/browser/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/apps/roulette-web/browser
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
