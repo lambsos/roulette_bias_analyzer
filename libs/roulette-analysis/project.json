@@ -1,0 +1,19 @@
+{
+  "name": "roulette-analysis",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/roulette-analysis/src",
+  "projectType": "library",
+  "tags": ["scope:shared", "type:util"],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/roulette-analysis",
+        "main": "libs/roulette-analysis/src/index.ts",
+        "tsConfig": "libs/roulette-analysis/tsconfig.lib.json",
+        "assets": ["libs/roulette-analysis/*.md"]
+      }
+    }
+  }
+}

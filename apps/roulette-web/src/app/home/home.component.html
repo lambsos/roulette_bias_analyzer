@@ -1,0 +1,525 @@
+<div class="rb-page">
+  <header class="rb-header">
+    <h1 class="rb-h1" data-testid="app-title">Roulette bias lab</h1>
+    <p class="rb-lead">
+      Enter European wheel outcomes (0–36), inspect uniformity and sector tests,
+      and view
+      <span class="rb-lead-accent">theoretical</span> bet rankings from a
+      smoothed model — not betting advice.
+    </p>
+  </header>
+
+  <main class="rb-main">
+    <section class="rb-card rb-card--split">
+      <div class="rb-stack">
+        <h2 class="rb-h2 rb-tooltip-target" [title]="sessionTip.sessionHeading">
+          Session
+        </h2>
+        <label class="rb-label">
+          <span class="rb-tooltip-target" [title]="sessionTip.sessionId"
+            >Session id</span
+          >
+          <input
+            class="rb-input"
+            data-testid="session-id"
+            [ngModel]="sessionSvc.sessionId()"
+            (ngModelChange)="sessionSvc.sessionId.set($event)"
+          />
+        </label>
+        <label class="rb-label">
+          <span class="rb-tooltip-target" [title]="sessionTip.dealerId"
+            >Dealer id (optional)</span
+          >
+          <input
+            class="rb-input"
+            [ngModel]="sessionSvc.dealerId()"
+            (ngModelChange)="sessionSvc.dealerId.set($event)"
+          />
+        </label>
+      </div>
+      <div class="rb-stack">
+        <h2 class="rb-h2 rb-tooltip-target" [title]="sessionTip.manualHeading">
+          Manual spin entry
+        </h2>
+        <div class="rb-row">
+          <label class="rb-label">
+            <span class="rb-tooltip-target" [title]="sessionTip.pocket"
+              >Pocket</span
+            >
+            <input
+              type="number"
+              min="0"
+              max="36"
+              class="rb-input rb-input--narrow"
+              data-testid="pocket-input"
+              [ngModel]="pocketInput()"
+              (ngModelChange)="setPocket($event)"
+            />
+          </label>
+          <button
+            type="button"
+            class="rb-btn rb-btn--primary"
+            data-testid="add-spin"
+            [title]="sessionTip.addSpin"
+            (click)="addSpin()"
+          >
+            Add spin
+          </button>
+          <button
+            type="button"
+            class="rb-btn"
+            [title]="sessionTip.undoLast"
+            (click)="sessionSvc.undoLast()"
+          >
+            Undo last
+          </button>
+          <button
+            type="button"
+            class="rb-btn rb-btn--danger"
+            [title]="sessionTip.clearSpins"
+            (click)="sessionSvc.clearSpins()"
+          >
+            Clear spins
+          </button>
+        </div>
+        <div class="rb-row--tight">
+          <button
+            type="button"
+            class="rb-btn"
+            data-testid="export-json"
+            [title]="sessionTip.exportJson"
+            (click)="downloadJson()"
+          >
+            Export JSON
+          </button>
+          <label class="rb-file-label" [title]="sessionTip.importJson">
+            Import JSON
+            <input
+              type="file"
+              accept="application/json"
+              (change)="onImportFile($event)"
+            />
+          </label>
+        </div>
+        @if (importError(); as err) {
+          <p class="rb-error">{{ err }}</p>
+        }
+        <p class="rb-hint">
+          Live capture: use <code>PlaywrightLiveDataSourceStub</code> in
+          <code>live-spin-source.ts</code> when wiring automation.
+        </p>
+      </div>
+    </section>
+
+    <section class="rb-card">
+      <h2
+        class="rb-section-title rb-tooltip-target"
+        [title]="sessionTip.spinsHeading"
+      >
+        Spins <span class="rb-muted">({{ sessionSvc.spins().length }})</span>
+      </h2>
+      @if (sessionSvc.spins().length === 0) {
+        <p
+          class="rb-empty rb-tooltip-target"
+          data-testid="no-spins"
+          [title]="sessionTip.spinsEmpty"
+        >
+          No spins yet — add pockets above.
+        </p>
+      } @else {
+        <pre class="rb-json rb-tooltip-target" [title]="sessionTip.spinsJson">{{
+          sessionSvc.spins() | json
+        }}</pre>
+      }
+    </section>
+
+    @if (sessionSvc.spins().length > 0) {
+      <section class="rb-card">
+        <h2
+          class="rb-section-title rb-tooltip-target"
+          data-testid="wheel-moves-heading"
+          [title]="wheelMoveTip.sectionHeading"
+        >
+          Wheel distance (moves)
+        </h2>
+        <p
+          class="rb-note rb-tooltip-target"
+          [title]="wheelMoveTip.sectionBlurb"
+        >
+          Shortest path in steps along the European wheel between consecutive
+          spins. The first spin has no prior pocket. Repeats show move 0; group
+          bins below count moves 1–18 only.
+        </p>
+        <div class="rb-table-scroll">
+          <table class="rb-table" data-testid="wheel-move-table">
+            <thead>
+              <tr>
+                <th>
+                  <span
+                    class="rb-tooltip-target"
+                    [title]="wheelMoveTip.colSpinIndex"
+                    >#</span
+                  >
+                </th>
+                <th>
+                  <span
+                    class="rb-tooltip-target"
+                    [title]="wheelMoveTip.colPocket"
+                    >Pocket</span
+                  >
+                </th>
+                <th>
+                  <span class="rb-tooltip-target" [title]="wheelMoveTip.colMove"
+                    >Move</span
+                  >
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of moveRows(); track $index) {
+                <tr>
+                  <td>
+                    <span
+                      class="rb-tooltip-target"
+                      [title]="wheelMoveTip.colSpinIndex"
+                      >{{ $index + 1 }}</span
+                    >
+                  </td>
+                  <td>
+                    <span
+                      class="rb-tooltip-target"
+                      [title]="wheelMoveTip.colPocket"
+                      >{{ row.pocket }}</span
+                    >
+                  </td>
+                  <td>
+                    @if (row.move === null) {
+                      <span
+                        class="rb-muted rb-tooltip-target"
+                        [title]="wheelMoveTip.anchorMove"
+                        >—</span
+                      >
+                    } @else {
+                      <span
+                        class="rb-tooltip-target"
+                        data-testid="wheel-move-value"
+                        [title]="moveTooltip(row.move)"
+                        >{{ row.move }}</span
+                      >
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        <h3
+          class="rb-subhead rb-tooltip-target"
+          [title]="wheelMoveTip.groupSubhead"
+        >
+          Group tallies
+        </h3>
+        <p
+          class="rb-note rb-note--tight rb-tooltip-target"
+          [title]="wheelMoveTip.groupBlurb"
+        >
+          Sliding windows of width 3, 5, 7, 9, 11, 14 over move sizes 1–18; each
+          transition increments every window that contains its move.
+        </p>
+        <div class="rb-group-tallies">
+          @for (t of groupTallies(); track t.groupSize) {
+            <div class="rb-group-tally-block">
+              <h4
+                class="rb-group-tally-title rb-tooltip-target"
+                [title]="groupSizeTooltip(t.groupSize)"
+              >
+                Group {{ t.groupSize }}
+              </h4>
+              <div class="rb-table-scroll">
+                <table class="rb-table rb-table--compact">
+                  <thead>
+                    <tr>
+                      <th>
+                        <span
+                          class="rb-tooltip-target"
+                          [title]="wheelMoveTip.colRange"
+                          >Range</span
+                        >
+                      </th>
+                      <th>
+                        <span
+                          class="rb-tooltip-target"
+                          [title]="wheelMoveTip.colHits"
+                          >Hits</span
+                        >
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (b of t.bins; track b.label) {
+                      <tr
+                        [title]="
+                          groupBinTooltip(t.groupSize, b.low, b.high, b.count)
+                        "
+                        class="rb-tooltip-row"
+                      >
+                        <td>{{ b.label }}</td>
+                        <td>{{ b.count }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+    }
+
+    @if (sessionSvc.report(); as rep) {
+      <section class="rb-stack">
+        <div class="rb-card">
+          <h2
+            class="rb-section-title rb-tooltip-target"
+            data-testid="stats-heading"
+            [title]="statsTip.sectionHeading"
+          >
+            Summary statistics
+          </h2>
+          <div class="rb-stat-grid">
+            @if (rep.chiSquareUniform; as chi) {
+              <div class="rb-stat-card">
+                <h3 class="rb-tooltip-target" [title]="statsTip.chiTitle">
+                  χ² vs uniform (37 cells)
+                </h3>
+                <p>
+                  <span
+                    class="rb-tooltip-target"
+                    [title]="statsTip.chiStatistic"
+                    >statistic:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    chi.statistic | number: '1.2-4'
+                  }}</span>
+                </p>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.chiDf"
+                    >df:</span
+                  >
+                  <span class="rb-stat-value">{{ chi.degreesOfFreedom }}</span>
+                </p>
+                <p>
+                  <span
+                    class="rb-tooltip-target"
+                    [title]="statsTip.chiPAsymptotic"
+                    >asymptotic p:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    chi.pValue | number: '1.2-4'
+                  }}</span>
+                </p>
+                @if (chi.permutationPValue !== undefined) {
+                  <p>
+                    <span class="rb-tooltip-target" [title]="statsTip.chiPPerm"
+                      >permutation p (MC):</span
+                    >
+                    <span class="rb-stat-value">{{
+                      chi.permutationPValue | number: '1.2-4'
+                    }}</span>
+                  </p>
+                }
+              </div>
+            }
+            @if (rep.sectorThirds; as sec) {
+              <div class="rb-stat-card">
+                <h3 class="rb-tooltip-target" [title]="statsTip.thirdsTitle">
+                  Wheel thirds (contiguous)
+                </h3>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.thirdsChi"
+                    >χ²:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    sec.statistic | number: '1.2-4'
+                  }}</span>
+                </p>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.thirdsP"
+                    >p:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    sec.pValue | number: '1.2-4'
+                  }}</span>
+                </p>
+              </div>
+            }
+            @if (rep.runsRedBlack; as runs) {
+              <div class="rb-stat-card">
+                <h3 class="rb-tooltip-target" [title]="statsTip.runsTitle">
+                  Runs test (red/black)
+                </h3>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.runsCount"
+                    >runs:</span
+                  >
+                  <span class="rb-stat-value">{{ runs.runs }}</span>
+                  (n=<span class="rb-tooltip-target" [title]="statsTip.runsN">{{
+                    runs.n
+                  }}</span
+                  >)
+                </p>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.runsP"
+                    >two-sided p:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    runs.pValueTwoSided | number: '1.2-4'
+                  }}</span>
+                </p>
+              </div>
+            }
+            @if (rep.transitionIndependence; as tr) {
+              <div class="rb-stat-card">
+                <h3 class="rb-tooltip-target" [title]="statsTip.transTitle">
+                  Lag-1 transition independence
+                </h3>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.transChi"
+                    >χ²:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    tr.statistic | number: '1.2-4'
+                  }}</span>
+                </p>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.transDf"
+                    >df:</span
+                  >
+                  <span class="rb-stat-value">{{ tr.degreesOfFreedom }}</span>
+                </p>
+                <p>
+                  <span class="rb-tooltip-target" [title]="statsTip.transP"
+                    >p:</span
+                  >
+                  <span class="rb-stat-value">{{
+                    tr.pValue | number: '1.2-4'
+                  }}</span>
+                </p>
+              </div>
+            }
+          </div>
+          @if (rep.fdrSignificantPockets.length > 0) {
+            <p class="rb-fdr rb-tooltip-target" [title]="statsTip.fdrLine">
+              FDR-flagged pockets (BH, α=0.05):
+              {{ rep.fdrSignificantPockets.join(', ') }}
+            </p>
+          }
+          <ul
+            class="rb-caveats rb-tooltip-target"
+            [title]="statsTip.caveatsList"
+          >
+            @for (c of rep.caveats; track c) {
+              <li>{{ c }}</li>
+            }
+          </ul>
+        </div>
+
+        <div class="rb-card">
+          <h2
+            class="rb-chart-title rb-tooltip-target"
+            [title]="statsTip.frequencyTitle"
+          >
+            Frequency by pocket
+          </h2>
+          <app-frequency-chart [counts]="rep.pocketCounts" />
+        </div>
+
+        <div class="rb-card">
+          <h2
+            class="rb-section-title rb-tooltip-target"
+            data-testid="bets-heading"
+            [title]="betsTip.sectionHeading"
+          >
+            Theoretical bet suggestions (max EV)
+          </h2>
+          <p class="rb-note rb-tooltip-target" [title]="betsTip.dirichletNote">
+            Smoothed Dirichlet(1) posterior; for exploration only. Fair wheels
+            remain negative EV at true odds.
+          </p>
+          <p
+            class="rb-note rb-note--callout rb-tooltip-target"
+            data-testid="bet-top-pick-callout"
+            [title]="betsTip.topRowCallout"
+          >
+            <strong>Top pick:</strong> the first row below is the bet type with
+            the highest modeled EV per 1 unit staked (of those ranked here).
+            Rows below are the next-best alternatives by the same rule. Not
+            betting advice.
+          </p>
+          <div class="rb-table-scroll">
+            <table class="rb-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="rb-tooltip-target" [title]="betsTip.colBet"
+                      >Bet</span
+                    >
+                  </th>
+                  <th>
+                    <span class="rb-tooltip-target" [title]="betsTip.colPWin"
+                      >P(win), model</span
+                    >
+                  </th>
+                  <th>
+                    <span class="rb-tooltip-target" [title]="betsTip.colEv"
+                      >EV / unit</span
+                    >
+                  </th>
+                  <th>
+                    <span class="rb-tooltip-target" [title]="betsTip.colNotes"
+                      >Notes</span
+                    >
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (
+                  b of rep.theoreticalBetsMaxEv.slice(0, 8);
+                  track b.selection
+                ) {
+                  <tr>
+                    <td>
+                      <span
+                        class="rb-tooltip-target"
+                        [title]="betSelectionTooltip(b.selection)"
+                        >{{ b.selection }}</span
+                      >
+                    </td>
+                    <td>
+                      <span
+                        class="rb-tooltip-target"
+                        [title]="betsTip.colPWin"
+                        >{{ b.modelWinProbability | number: '1.3-4' }}</span
+                      >
+                    </td>
+                    <td data-testid="bet-ev">
+                      <span class="rb-tooltip-target" [title]="betsTip.colEv">{{
+                        b.theoreticalEvPerUnit | number: '1.3-4'
+                      }}</span>
+                    </td>
+                    <td
+                      class="rb-table-note rb-tooltip-target"
+                      [title]="betsTip.betNotesDetail"
+                    >
+                      {{ b.confidenceNotes[0] }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    }
+  </main>
+</div>
